@@ -18,12 +18,15 @@ class Pet:
     tasks: List[Task] = field(default_factory=list)
 
     def add_task(self, task: Task) -> None:
+        """Append a task to this pet's task list."""
         self.tasks.append(task)
 
     def get_tasks(self) -> List[Task]:
+        """Return a copy of all tasks belonging to this pet."""
         return list(self.tasks)
 
     def get_pending_tasks(self) -> List[Task]:
+        """Return only tasks that have not yet been marked completed."""
         return [t for t in self.tasks if not t.completed]
 
 
@@ -34,15 +37,18 @@ class Owner:
     pets: List[Pet] = field(default_factory=list)
 
     def add_pet(self, pet: Pet) -> None:
+        """Register a pet under this owner."""
         self.pets.append(pet)
 
     def get_all_tasks(self) -> List[Task]:
+        """Return every task across all of this owner's pets, including completed ones."""
         tasks = []
         for pet in self.pets:
             tasks.extend(pet.get_tasks())
         return tasks
 
     def get_all_pending_tasks(self) -> List[Task]:
+        """Return only incomplete tasks across all of this owner's pets."""
         tasks = []
         for pet in self.pets:
             tasks.extend(pet.get_pending_tasks())
@@ -57,6 +63,7 @@ class ScheduleResult:
     label: str = ""  # e.g. "Mochi" or "Mochi, Buddy"
 
     def summary(self) -> str:
+        """Return a formatted string listing scheduled and skipped tasks with time totals."""
         header = f"Daily plan for {self.label}" if self.label else "Daily plan"
         lines = [f"{header} ({self.total_minutes_used} min scheduled):"]
         for task in self.scheduled_tasks:

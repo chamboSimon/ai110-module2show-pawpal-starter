@@ -110,3 +110,35 @@ divider()
 for t in result2.scheduled_tasks:
     print(f"  {t.start_time:<5} {t.title:<22} {t.duration_minutes:>4}  {t.pet_name}")
 divider("=")
+
+# ---------------------------------------------------------------------------
+# Conflict detection — manually stamp two tasks at the same time to trigger warning
+# ---------------------------------------------------------------------------
+header("CONFLICT DETECTION — overlapping time windows")
+
+overlap_owner = Owner(name="Jordan", available_minutes=120)
+rex = Pet(name="Rex", species="dog")
+# Both tasks manually given the same start time to force an overlap
+task_walk  = Task("Morning walk",  duration_minutes=30, priority="high",   frequency="daily")
+task_meds  = Task("Give meds",     duration_minutes=10, priority="high",   frequency="daily")
+task_groom = Task("Grooming",      duration_minutes=20, priority="medium", frequency="weekly")
+rex.add_task(task_walk)
+rex.add_task(task_meds)
+rex.add_task(task_groom)
+overlap_owner.add_pet(rex)
+
+# Stamp conflicting start times directly to simulate two tasks booked at once
+task_walk.start_time  = "09:00"   # 09:00 – 09:30
+task_meds.start_time  = "09:15"   # 09:15 – 09:25  ← overlaps walk
+task_groom.start_time = "10:00"   # 10:00 – 10:20  ← no overlap
+
+conflict_scheduler = Scheduler(overlap_owner)
+warnings = conflict_scheduler.detect_conflicts([task_walk, task_meds, task_groom])
+
+if warnings:
+    print(f"\n  {len(warnings)} overlap(s) found:")
+    for w in warnings:
+        print(f"    ⚠  {w}")
+else:
+    print("\n  No overlaps detected.")
+divider("=")

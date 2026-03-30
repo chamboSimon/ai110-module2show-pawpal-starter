@@ -89,6 +89,7 @@ class ScheduleResult:
     scheduled_tasks: List[Task] = field(default_factory=list)
     skipped_tasks: List[Task] = field(default_factory=list)
     conflict_tasks: List[Task] = field(default_factory=list)  # high-priority tasks that didn't fit
+    overlap_warnings: List[str] = field(default_factory=list) # time-overlap warnings from detect_conflicts
     total_minutes_used: int = 0
     label: str = ""
 
@@ -107,7 +108,7 @@ class ScheduleResult:
         )
 
     def summary(self) -> str:
-        """Return a formatted string listing scheduled, conflict, and skipped tasks."""
+        """Return a formatted string listing scheduled, overlap warnings, conflicts, and skipped tasks."""
         header = f"Daily plan for {self.label}" if self.label else "Daily plan"
         lines = [f"{header} ({self.total_minutes_used} min scheduled):"]
         for task in self.scheduled_tasks:
@@ -116,6 +117,10 @@ class ScheduleResult:
                 f"  - {task.title}{slot} ({task.duration_minutes} min)"
                 f" [{task.priority}] [{task.frequency}]"
             )
+        if self.overlap_warnings:
+            lines.append("TIME OVERLAPS detected:")
+            for w in self.overlap_warnings:
+                lines.append(f"  ⚠  {w}")
         if self.conflict_tasks:
             lines.append("CONFLICTS — high-priority tasks that did not fit:")
             for task in self.conflict_tasks:
@@ -190,7 +195,40 @@ class Scheduler:
                 else:
                     result.skipped_tasks.append(task)
 
+        result.overlap_warnings = self.detect_conflicts(result.scheduled_tasks)
         return result
+
+    def detect_conflicts(self, tasks: List[Task]) -> List[str]:
+        """
+        Check a list of timed tasks for overlapping windows. Returns warning strings
+        rather than raising, so callers can surface them without crashing.
+
+        Overlap condition: task A starts before task B ends AND task B starts before task A ends.
+        Only tasks that have a start_time set are checked.
+
+        Tradeoff: checks exact numeric overlap, not human intent — a 5-min walk at 08:00
+        and a 5-min feeding at 08:03 will be flagged even if a real owner could do both.
+        """
+        def to_min(t: str) -> int:
+            h, m = map(int, t.split(":"))
+            return h * 60 + m
+
+        def fmt(minutes: int) -> str:
+            return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+        timed = [(t, to_min(t.start_time)) for t in tasks if t.start_time]
+        warnings: List[str] = []
+
+        for i, (a, start_a) in enumerate(timed):
+            end_a = start_a + a.duration_minutes
+            for b, start_b in timed[i + 1:]:
+                end_b = start_b + b.duration_minutes
+                if start_a < end_b and start_b < end_a:
+                    warnings.append(
+                        f"'{a.title}' ({a.pet_name}, {a.start_time}–{fmt(end_a)}) "
+                        f"overlaps '{b.title}' ({b.pet_name}, {b.start_time}–{fmt(end_b)})"
+                    )
+        return warnings
 
     def get_schedule_for_pet(self, pet: Pet) -> ScheduleResult:
         """Run a full schedule then return only the entries belonging to pet."""

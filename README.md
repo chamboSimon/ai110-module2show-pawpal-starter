@@ -32,6 +32,22 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## Smarter Scheduling
+
+The scheduler goes beyond a simple sorted list. Key features built into `pawpal_system.py`:
+
+| Feature | How it works |
+|---|---|
+| **Priority + frequency sort** | Tasks are ranked high → medium → low, then daily → weekly → as_needed, then shortest-first as a tiebreaker to maximise tasks that fit the budget |
+| **Per-pet filtering** | `Scheduler.get_schedule_for_pet(pet)` returns a filtered `ScheduleResult` showing only one pet's tasks and time used |
+| **Status filtering** | `Owner.get_all_completed_tasks()` and `Pet.get_pending_tasks()` give distinct done vs. to-do views |
+| **Conflict detection** | `Scheduler.detect_conflicts(tasks)` checks for overlapping time windows and returns plain-English warnings — it never crashes the program |
+| **Auto-recurrence** | Completing a `daily` task spawns a new instance due tomorrow; completing a `weekly` task spawns one due in 7 days (`timedelta`) |
+| **Time-slot assignment** | Each scheduled task is stamped with a `start_time` (e.g. `08:25`) counting forward from a configurable `day_start_hour` |
+| **Daily reset** | `Owner.reset_daily_tasks()` clears `completed` on all daily tasks so the app is usable on day 2 without data loss |
+
+Run `python main.py` to see all features demonstrated in the terminal.
+
 ### Suggested workflow
 
 1. Read the scenario carefully and identify requirements and edge cases.

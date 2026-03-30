@@ -94,6 +94,8 @@ The scheduler uses a greedy approach: it picks tasks in priority order and adds 
 
 This means it can miss an optimal combination — for example, two medium-priority tasks that together fit in the budget might be skipped if one large high-priority task consumed most of the available time. A full knapsack-style search would find the best combination, but for a daily pet care planner with a small number of tasks, the greedy approach is fast, predictable, and easy to explain to the user. Correctness of output matters less than transparency: the owner should be able to look at the plan and immediately understand why each task was or wasn't included.
 
+**Conflict detection tradeoff:** The `detect_conflicts()` method checks for exact numeric time-window overlaps using start time and duration. This means a 30-minute walk starting at 09:00 and a 10-minute medication starting at 09:15 will always be flagged, even if a real owner could realistically do both (pause the walk, give the meds, continue). The alternative — modelling human multitasking or task interruptibility — would require far more complex logic and still be wrong some of the time. Exact-overlap detection is chosen because it is transparent and conservative: it is better to surface a false warning the owner can dismiss than to silently miss a genuine double-booking of their time.
+
 ---
 
 ## 3. AI Collaboration

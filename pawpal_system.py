@@ -29,7 +29,18 @@ class ScheduleResult:
     total_minutes_used: int = 0
 
     def summary(self) -> str:
-        pass
+        lines = []
+        lines.append(f"Scheduled ({self.total_minutes_used} min used):")
+        for task in self.scheduled_tasks:
+            lines.append(f"  - {task.title} ({task.duration_minutes} min) [{task.priority}]")
+        if self.skipped_tasks:
+            lines.append("Skipped (did not fit in time budget):")
+            for task in self.skipped_tasks:
+                lines.append(f"  - {task.title} ({task.duration_minutes} min) [{task.priority}]")
+        return "\n".join(lines)
+
+
+_PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 
 class Scheduler:
@@ -39,7 +50,17 @@ class Scheduler:
         self.tasks: List[Task] = []
 
     def add_task(self, task: Task) -> None:
-        pass
+        self.tasks.append(task)
 
     def generate_schedule(self) -> ScheduleResult:
-        pass
+        sorted_tasks = sorted(self.tasks, key=lambda t: _PRIORITY_ORDER.get(t.priority, 99))
+        result = ScheduleResult()
+        remaining = self.owner.available_minutes
+        for task in sorted_tasks:
+            if task.duration_minutes <= remaining:
+                result.scheduled_tasks.append(task)
+                result.total_minutes_used += task.duration_minutes
+                remaining -= task.duration_minutes
+            else:
+                result.skipped_tasks.append(task)
+        return result

@@ -9,6 +9,8 @@ class Task:
     priority: str   # "low", "medium", "high"
     frequency: str  # "daily", "weekly", "as_needed"
     completed: bool = False
+    pet_name: str = ""   # stamped automatically by Pet.add_task()
+    start_time: str = "" # assigned by Scheduler when time slots are built (F)
 
 
 @dataclass
@@ -18,7 +20,8 @@ class Pet:
     tasks: List[Task] = field(default_factory=list)
 
     def add_task(self, task: Task) -> None:
-        """Append a task to this pet's task list."""
+        """Append a task to this pet's task list and stamp its pet_name."""
+        task.pet_name = self.name
         self.tasks.append(task)
 
     def get_tasks(self) -> List[Task]:
@@ -28,6 +31,10 @@ class Pet:
     def get_pending_tasks(self) -> List[Task]:
         """Return only tasks that have not yet been marked completed."""
         return [t for t in self.tasks if not t.completed]
+
+    def get_completed_tasks(self) -> List[Task]:
+        """Return only tasks that have been marked completed."""
+        return [t for t in self.tasks if t.completed]
 
 
 @dataclass
@@ -54,23 +61,62 @@ class Owner:
             tasks.extend(pet.get_pending_tasks())
         return tasks
 
+    def get_all_completed_tasks(self) -> List[Task]:
+        """Return completed tasks across all of this owner's pets."""
+        tasks = []
+        for pet in self.pets:
+            tasks.extend(pet.get_completed_tasks())
+        return tasks
+
+    def reset_daily_tasks(self) -> int:
+        """Reset completed=False for every daily-frequency task. Returns count reset."""
+        count = 0
+        for task in self.get_all_tasks():
+            if task.frequency == "daily" and task.completed:
+                task.completed = False
+                count += 1
+        return count
+
 
 @dataclass
 class ScheduleResult:
     scheduled_tasks: List[Task] = field(default_factory=list)
     skipped_tasks: List[Task] = field(default_factory=list)
+    conflict_tasks: List[Task] = field(default_factory=list)  # high-priority tasks that didn't fit
     total_minutes_used: int = 0
-    label: str = ""  # e.g. "Mochi" or "Mochi, Buddy"
+    label: str = ""
+
+    def filter_by_pet(self, pet_name: str) -> "ScheduleResult":
+        """Return a new ScheduleResult containing only tasks belonging to pet_name."""
+        return ScheduleResult(
+            scheduled_tasks=[t for t in self.scheduled_tasks if t.pet_name == pet_name],
+            skipped_tasks=[t for t in self.skipped_tasks if t.pet_name == pet_name],
+            conflict_tasks=[t for t in self.conflict_tasks if t.pet_name == pet_name],
+            total_minutes_used=sum(
+                t.duration_minutes
+                for t in self.scheduled_tasks
+                if t.pet_name == pet_name
+            ),
+            label=pet_name,
+        )
 
     def summary(self) -> str:
-        """Return a formatted string listing scheduled and skipped tasks with time totals."""
+        """Return a formatted string listing scheduled, conflict, and skipped tasks."""
         header = f"Daily plan for {self.label}" if self.label else "Daily plan"
         lines = [f"{header} ({self.total_minutes_used} min scheduled):"]
         for task in self.scheduled_tasks:
+            slot = f" @ {task.start_time}" if task.start_time else ""
             lines.append(
-                f"  - {task.title} ({task.duration_minutes} min)"
+                f"  - {task.title}{slot} ({task.duration_minutes} min)"
                 f" [{task.priority}] [{task.frequency}]"
             )
+        if self.conflict_tasks:
+            lines.append("CONFLICTS — high-priority tasks that did not fit:")
+            for task in self.conflict_tasks:
+                lines.append(
+                    f"  ! {task.title} ({task.duration_minutes} min)"
+                    f" — consider freeing up time"
+                )
         if self.skipped_tasks:
             lines.append("Skipped (did not fit in time budget):")
             for task in self.skipped_tasks:
@@ -88,8 +134,9 @@ _FREQUENCY_ORDER = {"daily": 0, "weekly": 1, "as_needed": 2}
 class Scheduler:
     """Retrieves all pending tasks from the owner's pets and builds a daily plan."""
 
-    def __init__(self, owner: Owner):
+    def __init__(self, owner: Owner, day_start_hour: int = 8):
         self.owner = owner
+        self.day_start_hour = day_start_hour  # hour the day begins, used for time-slot assignment
 
     def get_all_tasks(self) -> List[Task]:
         """Return every task across all of the owner's pets (including completed)."""
@@ -101,32 +148,47 @@ class Scheduler:
 
     def generate_schedule(self) -> ScheduleResult:
         """
-        Greedy scheduler: sorts pending tasks by priority then frequency,
-        selects tasks that fit within the owner's available_minutes budget.
-        Daily high-priority tasks are always considered first.
+        Greedy scheduler: sorts by priority, then frequency, then duration (shorter first
+        as tiebreaker). Assigns sequential start times from day_start_hour. Flags any
+        skipped high-priority task as a conflict rather than a silent skip.
         """
         pending = self.get_pending_tasks()
+        # A — duration is third sort key: shorter tasks fill remaining budget more efficiently
         sorted_tasks = sorted(
             pending,
             key=lambda t: (
                 _PRIORITY_ORDER.get(t.priority, 99),
                 _FREQUENCY_ORDER.get(t.frequency, 99),
+                t.duration_minutes,
             ),
         )
 
         label = ", ".join(p.name for p in self.owner.pets)
         result = ScheduleResult(label=label)
         remaining = self.owner.available_minutes
+        current_minutes = self.day_start_hour * 60  # F — running clock in minutes from midnight
 
         for task in sorted_tasks:
             if task.duration_minutes <= remaining:
+                # F — stamp start time on the task object
+                h, m = divmod(current_minutes, 60)
+                task.start_time = f"{h:02d}:{m:02d}"
+                current_minutes += task.duration_minutes
+                remaining -= task.duration_minutes
                 result.scheduled_tasks.append(task)
                 result.total_minutes_used += task.duration_minutes
-                remaining -= task.duration_minutes
             else:
-                result.skipped_tasks.append(task)
+                # D — high-priority skips become conflicts, not silent drops
+                if task.priority == "high":
+                    result.conflict_tasks.append(task)
+                else:
+                    result.skipped_tasks.append(task)
 
         return result
+
+    def get_schedule_for_pet(self, pet: Pet) -> ScheduleResult:
+        """Run a full schedule then return only the entries belonging to pet."""
+        return self.generate_schedule().filter_by_pet(pet.name)  # B
 
     def mark_completed(self, task: Task) -> None:
         """Mark a task as completed so it is excluded from future schedule runs."""

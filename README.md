@@ -17,7 +17,7 @@ PawPal+ is a Streamlit app that helps a pet owner plan daily care tasks for one 
 
 ## 📸 Demo
 
-<a href="/course_images/ai110/pawpal_screenshot.png" target="_blank"><img src='/course_images/ai110/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
+![PawPal App](Images/Screenshot%202026-03-29%20at%2010.51.57%20PM.png)
 
 ## Scenario
 

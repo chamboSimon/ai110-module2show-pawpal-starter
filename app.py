@@ -47,6 +47,7 @@ if st.session_state.owner is None:
     st.info("Fill in your name and time budget above to get started.")
     st.stop()
 
+assert st.session_state.owner is not None
 owner: Owner = st.session_state.owner
 
 # ---------------------------------------------------------------------------
@@ -240,6 +241,7 @@ else:
                 if not t.completed:
                     label = f"Complete: {t.title} ({t.pet_name}, {t.start_time})"
                     if st.button(label, key=f"complete_{id(t)}"):
+                        assert scheduler is not None
                         next_task = scheduler.mark_completed(t)
                         if next_task:
                             st.success(

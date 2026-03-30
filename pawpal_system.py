@@ -1,16 +1,18 @@
 from dataclasses import dataclass, field
-from typing import List
+from datetime import date, timedelta
+from typing import List, Optional
 
 
 @dataclass
 class Task:
     title: str
     duration_minutes: int
-    priority: str   # "low", "medium", "high"
-    frequency: str  # "daily", "weekly", "as_needed"
+    priority: str            # "low", "medium", "high"
+    frequency: str           # "daily", "weekly", "as_needed"
     completed: bool = False
-    pet_name: str = ""   # stamped automatically by Pet.add_task()
-    start_time: str = "" # assigned by Scheduler when time slots are built (F)
+    pet_name: str = ""       # stamped automatically by Pet.add_task()
+    start_time: str = ""     # assigned by Scheduler when time slots are built
+    due_date: Optional[date] = None  # None = due today; future date = not yet due
 
 
 @dataclass
@@ -29,8 +31,12 @@ class Pet:
         return list(self.tasks)
 
     def get_pending_tasks(self) -> List[Task]:
-        """Return only tasks that have not yet been marked completed."""
-        return [t for t in self.tasks if not t.completed]
+        """Return incomplete tasks whose due_date is today or earlier (or unset)."""
+        today = date.today()
+        return [
+            t for t in self.tasks
+            if not t.completed and (t.due_date is None or t.due_date <= today)
+        ]
 
     def get_completed_tasks(self) -> List[Task]:
         """Return only tasks that have been marked completed."""
@@ -190,6 +196,31 @@ class Scheduler:
         """Run a full schedule then return only the entries belonging to pet."""
         return self.generate_schedule().filter_by_pet(pet.name)  # B
 
-    def mark_completed(self, task: Task) -> None:
-        """Mark a task as completed so it is excluded from future schedule runs."""
+    def mark_completed(self, task: Task) -> Optional[Task]:
+        """
+        Mark a task as completed. For daily/weekly tasks, automatically creates and
+        registers the next occurrence on the owning pet using timedelta. Returns the
+        new Task if one was created, otherwise None.
+        """
         task.completed = True
+
+        if task.frequency not in ("daily", "weekly"):
+            return None
+
+        delta = timedelta(days=1) if task.frequency == "daily" else timedelta(weeks=1)
+        next_due = date.today() + delta
+
+        next_task = Task(
+            title=task.title,
+            duration_minutes=task.duration_minutes,
+            priority=task.priority,
+            frequency=task.frequency,
+            due_date=next_due,
+        )
+
+        # find the pet that owns this task and register the next occurrence
+        pet = next((p for p in self.owner.pets if task in p.tasks), None)
+        if pet:
+            pet.add_task(next_task)
+
+        return next_task

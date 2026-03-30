@@ -82,18 +82,27 @@ for t in owner.get_all_pending_tasks():
     print(f"    ○  {t.title} ({t.pet_name})")
 
 # ---------------------------------------------------------------------------
-# E — Daily reset
+# Auto-recurrence — completing a daily/weekly task spawns its next occurrence
 # ---------------------------------------------------------------------------
-header("DAILY RESET  (E — recurring tasks)")
+header("AUTO-RECURRENCE — next occurrence on completion")
 
-reset_count = owner.reset_daily_tasks()
-print(f"\n  {reset_count} daily task(s) reset to pending.")
-print(f"  Pending after reset: {len(owner.get_all_pending_tasks())} tasks")
+mochi_walk = mochi.tasks[0]   # Morning walk (daily)
+luna_brush = luna.tasks[2]    # Brush coat (weekly)
+
+next_walk  = scheduler.mark_completed(mochi_walk)
+next_brush = scheduler.mark_completed(luna_brush)
+
+print(f"\n  Completed:  '{mochi_walk.title}' and '{luna_brush.title}'")
+print(f"\n  Auto-created next occurrences:")
+print(f"    → {next_walk.title}  (daily)   due: {next_walk.due_date}")
+print(f"    → {next_brush.title} (weekly)  due: {next_brush.due_date}")
+print(f"\n  Mochi now has {len(mochi.tasks)} tasks ({sum(1 for t in mochi.tasks if not t.completed)} pending)")
+print(f"  Luna  now has {len(luna.tasks)} tasks ({sum(1 for t in luna.tasks if not t.completed)} pending)")
 
 # ---------------------------------------------------------------------------
-# F — Time slots visible in a fresh schedule after reset
+# F — Time slots visible in a fresh schedule after recurrence
 # ---------------------------------------------------------------------------
-header("SCHEDULE AFTER RESET  (F — time slots)")
+header("SCHEDULE AFTER RECURRENCE  (F — time slots)")
 
 result2 = scheduler.generate_schedule()
 print(f"\n{'TIME':<7} {'TASK':<22} {'MIN':>4}  {'PET'}")

@@ -27,10 +27,11 @@ class ScheduleResult:
     scheduled_tasks: List[Task] = field(default_factory=list)
     skipped_tasks: List[Task] = field(default_factory=list)
     total_minutes_used: int = 0
+    pet_name: str = ""
 
     def summary(self) -> str:
-        lines = []
-        lines.append(f"Scheduled ({self.total_minutes_used} min used):")
+        header = f"Daily plan for {self.pet_name}" if self.pet_name else "Daily plan"
+        lines = [f"{header} ({self.total_minutes_used} min scheduled):"]
         for task in self.scheduled_tasks:
             lines.append(f"  - {task.title} ({task.duration_minutes} min) [{task.priority}]")
         if self.skipped_tasks:
@@ -54,7 +55,7 @@ class Scheduler:
 
     def generate_schedule(self) -> ScheduleResult:
         sorted_tasks = sorted(self.tasks, key=lambda t: _PRIORITY_ORDER.get(t.priority, 99))
-        result = ScheduleResult()
+        result = ScheduleResult(pet_name=self.pet.name)
         remaining = self.owner.available_minutes
         for task in sorted_tasks:
             if task.duration_minutes <= remaining:

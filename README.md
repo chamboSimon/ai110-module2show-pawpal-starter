@@ -57,3 +57,23 @@ Run `python main.py` to see all features demonstrated in the terminal.
 5. Add tests to verify key behaviors.
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
+
+## Testing PawPal+
+
+Run the full test suite with:
+
+```bash
+python3 -m pytest
+```
+
+The suite lives in `tests/test_pawpal.py` and covers 11 test cases across four areas:
+
+| Area | What is verified |
+|---|---|
+| **Sorting correctness** | Scheduled tasks appear in ascending chronological (start-time) order; priority → frequency → duration sort keys all apply correctly |
+| **Recurrence logic** | Completing a `daily` task spawns a new task due tomorrow; `weekly` spawns one due in 7 days; `as_needed` creates nothing |
+| **Conflict detection** | Overlapping time windows produce a warning; adjacent tasks (end == start) produce no false positive; empty input is safe |
+| **Budget enforcement** | A high-priority task that exceeds available minutes lands in `conflict_tasks`, not silently in `skipped_tasks` |
+
+**Confidence level: ★★★★☆**
+Core scheduling behaviors are well-covered. The greedy algorithm, recurrence, conflict detection, and priority ordering all pass. Edge cases around multi-pet schedules and calendar boundaries (month rollover) are not yet tested.

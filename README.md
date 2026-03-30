@@ -16,8 +16,8 @@ PawPal+ is a Streamlit app that helps a pet owner plan daily care tasks for one 
 | **Daily reset** | `Owner.reset_daily_tasks()` re-opens all daily tasks so the app is usable on day 2 without losing data |
 
 ## 📸 Demo
+<img width="1470" height="956" alt="Screenshot 2026-03-29 at 10 51 57 PM" src="https://github.com/user-attachments/assets/98bbf3bf-c397-4d2c-9850-b6020c464ab6" />
 
-![PawPal App](Images/Screenshot%202026-03-29%20at%2010.51.57%20PM.png)
 
 ## Scenario
 

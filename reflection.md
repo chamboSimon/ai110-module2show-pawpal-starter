@@ -20,46 +20,66 @@ The system is built around five classes:
 - **`ScheduleResult`** — the output of a scheduling run. It carries the selected tasks, the skipped tasks, total minutes used, and a `summary()` method that formats everything for display. Separating this from `Scheduler` keeps the logic and output concerns distinct.
 - **`Scheduler`** — the only class with real behavior. It holds an `Owner`, a `Pet`, and a list of `Task` objects. `add_task()` adds to that list; `generate_schedule()` runs the greedy selection algorithm and returns a `ScheduleResult`.
 
-**UML Class Diagram**
+**UML Class Diagram (Final — updated to match pawpal_system.py)**
 
 ```mermaid
 classDiagram
     class Owner {
         +String name
         +int available_minutes
+        +List~Pet~ pets
+        +add_pet(pet Pet) None
+        +get_all_tasks() List~Task~
+        +get_all_pending_tasks() List~Task~
+        +get_all_completed_tasks() List~Task~
+        +reset_daily_tasks() int
     }
 
     class Pet {
         +String name
         +String species
+        +List~Task~ tasks
+        +add_task(task Task) None
+        +get_tasks() List~Task~
+        +get_pending_tasks() List~Task~
+        +get_completed_tasks() List~Task~
     }
 
     class Task {
         +String title
         +int duration_minutes
         +String priority
+        +String frequency
         +bool completed
+        +String pet_name
+        +String start_time
+        +Optional~date~ due_date
     }
 
     class Scheduler {
         +Owner owner
-        +Pet pet
-        +List~Task~ tasks
-        +add_task(task Task)
+        +int day_start_hour
+        +get_pending_tasks() List~Task~
         +generate_schedule() ScheduleResult
+        +detect_conflicts(tasks List~Task~) List~String~
+        +get_schedule_for_pet(pet Pet) ScheduleResult
+        +mark_completed(task Task) Optional~Task~
     }
 
     class ScheduleResult {
         +List~Task~ scheduled_tasks
         +List~Task~ skipped_tasks
+        +List~Task~ conflict_tasks
+        +List~String~ overlap_warnings
         +int total_minutes_used
+        +String label
+        +filter_by_pet(pet_name String) ScheduleResult
         +summary() String
     }
 
-    Owner "1" --> "1" Pet : owns
-    Scheduler --> Owner : uses
-    Scheduler --> Pet : uses
-    Scheduler "1" --> "many" Task : manages
+    Owner "1" *-- "many" Pet : owns
+    Pet "1" *-- "many" Task : has
+    Scheduler --> Owner : reads from
     Scheduler ..> ScheduleResult : produces
     ScheduleResult "1" --> "many" Task : references
 ```
@@ -109,6 +129,24 @@ The most helpful prompts were specific and grounded in the scenario: for example
 **b. Judgment and verification**
 
 When the AI initially suggested using a full knapsack optimization algorithm for scheduling, that suggestion was not accepted as-is. While technically more optimal, a knapsack solution is harder to explain to the user and overkill for a list of five to ten daily tasks. The greedy approach was chosen instead because it is easy to trace: the plan can always tell the user "this task was skipped because only 10 minutes remained and it takes 30." This was verified by manually stepping through a few example task lists to confirm the greedy output matched the expected plan.
+
+**c. AI Strategy — VS Code Copilot**
+
+**Which Copilot features were most effective?**
+
+Inline completions were most useful during the implementation of `generate_schedule()` and `detect_conflicts()`. Once the method signature and a one-line docstring describing the contract were written, Copilot's completions correctly suggested the sort key lambda and the overlap inequality (`start_a < end_b and start_b < end_a`) on the first try. Copilot Chat with `#file:pawpal_system.py` was valuable for a different reason: asking "what edge cases does this scheduler not yet handle?" produced a concrete list (zero-budget owner, double-completion, month-boundary recurrence) that directly shaped the test suite.
+
+**One AI suggestion that was rejected or modified:**
+
+When drafting the `detect_conflicts` method, Copilot suggested raising a `ValueError` when an overlap was found, with the message "conflicting tasks detected." This was rejected because crashing the program every time two tasks overlap would make the UI unusable — the owner needs to see the conflict and decide what to do, not receive an error. The suggestion was modified to return a list of plain-English warning strings instead, which the UI then renders as yellow banners. The rule of thumb applied here: surface information to the user, don't crash on it.
+
+**How did using separate chat sessions for different phases help?**
+
+Keeping system design, implementation, testing, and UI work in separate Copilot Chat sessions prevented context bleed. In the design session, the AI was free to suggest broad class structures without being anchored to code that didn't exist yet. In the implementation sessions, scoping the context to `#file:pawpal_system.py` kept suggestions grounded in the actual signatures already written. In the testing session, including `#file:tests/test_pawpal.py` alongside the system file meant the AI could see both sides and flag when a test was testing the wrong thing. Mixing all phases into one session would have produced suggestions anchored to early, incomplete code.
+
+**Lead architect takeaway:**
+
+The most important thing learned about being the lead architect in an AI-assisted workflow is that the AI is a strong executor but a weak designer. It will happily implement whatever interface it is given — but it will not question whether that interface is the right one. Every time the AI produced a suggestion, the decision that mattered was not "does this code work?" but "does this design belong here?" Decisions like keeping `ScheduleResult` as a plain dataclass instead of adding scheduling logic to it, or choosing warnings over exceptions in `detect_conflicts`, were judgment calls that had to come from the architect. The AI accelerated the typing; the design decisions remained entirely human.
 
 ---
 

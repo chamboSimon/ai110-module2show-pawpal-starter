@@ -13,6 +13,10 @@ if "owner" not in st.session_state:
     st.session_state.owner = None          # set after owner form is submitted
 if "active_pet" not in st.session_state:
     st.session_state.active_pet = None     # the pet currently selected for tasks
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None    # most recent ScheduleResult for mark-complete
+if "last_scheduler" not in st.session_state:
+    st.session_state.last_scheduler = None # Scheduler instance that produced last_result
 
 # ---------------------------------------------------------------------------
 # Section 1 — Owner setup
@@ -30,8 +34,6 @@ with st.form("owner_form"):
     submitted = st.form_submit_button("Save owner")
 
 if submitted:
-    # Replace (or create) the Owner stored in session — form values are used
-    # directly so a re-submission updates the budget without losing pet data.
     if st.session_state.owner is None:
         st.session_state.owner = Owner(
             name=owner_name, available_minutes=int(available_minutes)
@@ -43,7 +45,7 @@ if submitted:
 
 if st.session_state.owner is None:
     st.info("Fill in your name and time budget above to get started.")
-    st.stop()   # nothing below can work without an Owner, so stop here
+    st.stop()
 
 owner: Owner = st.session_state.owner
 
@@ -63,14 +65,13 @@ with st.form("pet_form"):
 
 if add_pet:
     new_pet = Pet(name=pet_name, species=species)
-    owner.add_pet(new_pet)                          # Owner.add_pet() from pawpal_system
+    owner.add_pet(new_pet)
     st.session_state.active_pet = new_pet
     st.success(f"Added {pet_name} the {species}!")
 
 if owner.pets:
     pet_names = [p.name for p in owner.pets]
     selected_name = st.selectbox("Select pet to add tasks to", pet_names)
-    # Keep active_pet in sync with the selectbox
     st.session_state.active_pet = next(p for p in owner.pets if p.name == selected_name)
 else:
     st.info("No pets yet — add one above.")
@@ -106,17 +107,16 @@ else:
             priority=priority,
             frequency=frequency,
         )
-        active_pet.add_task(task)                   # Pet.add_task() from pawpal_system
+        active_pet.add_task(task)
         st.success(f"Added '{task_title}' to {active_pet.name}")
 
-    # Show all tasks across all pets
-    all_tasks = owner.get_all_tasks()               # Owner.get_all_tasks() from pawpal_system
+    all_tasks = owner.get_all_tasks()
     if all_tasks:
         st.markdown("**All tasks (across all pets):**")
         st.table(
             [
                 {
-                    "Pet": next(p.name for p in owner.pets if t in p.tasks),
+                    "Pet": t.pet_name,
                     "Task": t.title,
                     "Min": t.duration_minutes,
                     "Priority": t.priority,
@@ -140,37 +140,126 @@ if not all_tasks:
     st.info("Add at least one task before generating a schedule.")
 else:
     if st.button("Generate schedule"):
-        scheduler = Scheduler(owner)                # Scheduler only needs the Owner
-        result = scheduler.generate_schedule()      # greedy selection from pawpal_system
+        scheduler = Scheduler(owner)
+        result = scheduler.generate_schedule()
+        st.session_state.last_result = result
+        st.session_state.last_scheduler = scheduler
 
-        st.subheader(f"Plan for {owner.name} — {result.total_minutes_used} min scheduled")
+    result = st.session_state.last_result
+    scheduler = st.session_state.last_scheduler
 
-        if result.scheduled_tasks:
-            st.markdown("**Scheduled tasks:**")
-            st.table(
-                [
-                    {
-                        "Task": t.title,
-                        "Min": t.duration_minutes,
-                        "Priority": t.priority,
-                        "Frequency": t.frequency,
-                    }
-                    for t in result.scheduled_tasks
-                ]
+    if result is not None:
+        # ── Budget summary bar ──────────────────────────────────────────────
+        used = result.total_minutes_used
+        budget = owner.available_minutes
+        remaining = budget - used
+        st.subheader(f"Plan for {owner.name} — {used} / {budget} min used")
+        st.progress(min(used / budget, 1.0))
+        st.caption(f"{remaining} min remaining in budget")
+
+        # ── Time-overlap warnings (soft conflicts) ──────────────────────────
+        if result.overlap_warnings:
+            st.warning(
+                f"⚠️ **{len(result.overlap_warnings)} time overlap(s) detected** — "
+                "tasks below were scheduled but their windows overlap. "
+                "Consider adjusting durations or start times."
             )
+            for w in result.overlap_warnings:
+                st.markdown(f"- {w}")
+
+        # ── Hard conflicts: high-priority tasks that didn't fit ─────────────
+        if result.conflict_tasks:
+            st.error(
+                f"🚨 **{len(result.conflict_tasks)} high-priority task(s) could not be scheduled** — "
+                "they exceeded your available time budget. Free up time or shorten other tasks."
+            )
+            for t in result.conflict_tasks:
+                st.markdown(
+                    f"- **{t.title}** ({t.pet_name}) — {t.duration_minutes} min "
+                    f"[{t.priority}] [{t.frequency}]"
+                )
+
+        # ── Scheduled tasks table ───────────────────────────────────────────
+        if result.scheduled_tasks:
+            st.success(f"✅ {len(result.scheduled_tasks)} task(s) scheduled")
+
+            # Per-pet tabs when there are multiple pets
+            if len(owner.pets) > 1:
+                tabs = st.tabs([p.name for p in owner.pets] + ["All pets"])
+                pet_views = [result.filter_by_pet(p.name) for p in owner.pets]
+                for tab, pet, pet_result in zip(tabs[:-1], owner.pets, pet_views):
+                    with tab:
+                        if pet_result.scheduled_tasks:
+                            st.table(
+                                [
+                                    {
+                                        "Start": t.start_time,
+                                        "Task": t.title,
+                                        "Min": t.duration_minutes,
+                                        "Priority": t.priority,
+                                        "Frequency": t.frequency,
+                                    }
+                                    for t in pet_result.scheduled_tasks
+                                ]
+                            )
+                        else:
+                            st.info(f"No tasks scheduled for {pet.name}.")
+                with tabs[-1]:
+                    _all_tab_tasks = result.scheduled_tasks
+                    st.table(
+                        [
+                            {
+                                "Start": t.start_time,
+                                "Pet": t.pet_name,
+                                "Task": t.title,
+                                "Min": t.duration_minutes,
+                                "Priority": t.priority,
+                                "Frequency": t.frequency,
+                            }
+                            for t in _all_tab_tasks
+                        ]
+                    )
+            else:
+                st.table(
+                    [
+                        {
+                            "Start": t.start_time,
+                            "Task": t.title,
+                            "Min": t.duration_minutes,
+                            "Priority": t.priority,
+                            "Frequency": t.frequency,
+                        }
+                        for t in result.scheduled_tasks
+                    ]
+                )
+
+            # ── Mark tasks complete ─────────────────────────────────────────
+            st.markdown("---")
+            st.markdown("**Mark tasks complete:**")
+            for t in result.scheduled_tasks:
+                if not t.completed:
+                    label = f"Complete: {t.title} ({t.pet_name}, {t.start_time})"
+                    if st.button(label, key=f"complete_{id(t)}"):
+                        next_task = scheduler.mark_completed(t)
+                        if next_task:
+                            st.success(
+                                f"✓ '{t.title}' marked done. "
+                                f"Next {t.frequency} occurrence added for {next_task.due_date}."
+                            )
+                        else:
+                            st.success(f"✓ '{t.title}' marked done.")
+                        st.rerun()
+                else:
+                    st.markdown(f"~~{t.title}~~ ✓ ({t.pet_name})")
+
         else:
             st.warning("No tasks fit within your time budget.")
 
+        # ── Skipped tasks ───────────────────────────────────────────────────
         if result.skipped_tasks:
-            with st.expander(f"Skipped tasks ({len(result.skipped_tasks)})"):
+            with st.expander(f"Skipped tasks ({len(result.skipped_tasks)}) — did not fit in budget"):
                 for t in result.skipped_tasks:
                     st.markdown(
-                        f"- **{t.title}** — {t.duration_minutes} min "
-                        f"[{t.priority}] [{t.frequency}] *(did not fit in budget)*"
+                        f"- **{t.title}** ({t.pet_name}) — {t.duration_minutes} min "
+                        f"[{t.priority}] [{t.frequency}]"
                     )
-
-        st.caption(
-            f"Budget: {owner.available_minutes} min available / "
-            f"{result.total_minutes_used} min used / "
-            f"{owner.available_minutes - result.total_minutes_used} min remaining"
-        )
